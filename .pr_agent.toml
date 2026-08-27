@@ -1,0 +1,8 @@
+[pr_reviewer]
+extra_instructions = """
+In this robotics project:
+1. Ensure all MCP tools strictly validate inputs.
+2. Confirm that destructive actuator tools cannot bypass TrueForge Human Approval.
+3. Ensure type hints and error handling are present on every function.
+"""
+enable_auto_approval = false

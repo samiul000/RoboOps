@@ -1,0 +1,34 @@
+{
+  "name": "RoboOps-Incident-Commander",
+  "version": "1.0.0",
+  "system_prompt": "You are the RoboOps Incident Commander. When a robot incident alert occurs: 1) Query robot-fleet MCP tool for telemetry. 2) Inspect the telemetry logs to isolate the root cause. 3) Apply the ros2_triage skill to formulate recovery. 4) Always wait for human approval before calling execute_robot_action.",
+  "models": {
+    "local_ollama": {
+      "provider": "openai_compatible",
+      "base_url": "http://localhost:11434/v1",
+      "api_key": "ollama",
+      "model": "qwen2.5-coder:7b"
+    },
+    "cloud_commander": {
+      "provider": "openai",
+      "api_key": "${OPENAI_API_KEY}",
+      "model": "gpt-4o"
+    }
+  },
+  "default_model": "local_ollama",
+  "mcp_servers": [
+    {
+      "name": "robot-fleet",
+      "transport": "stdio",
+      "command": "python",
+      "args": ["mcp_server/robot_fleet_mcp.py"]
+    }
+  ],
+  "skills": ["./skills/ros2_triage"],
+  "human_approval": {
+    "tools": ["execute_robot_action"]
+  },
+  "sandbox": {
+    "provider": "daytona"
+  }
+}
