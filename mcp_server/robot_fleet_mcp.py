@@ -44,11 +44,15 @@ def get_incident_log_file(robot_id: str) -> str:
     return robot["incident_log_path"]
 
 @mcp.tool()
-def execute_robot_action(robot_id: str, action: str) -> str:
+def execute_robot_action(robot_id: str, action: str, operator_approval: str = "") -> str:
     """
     CRITICAL WRITE ACTION: Dispatches recovery commands to robot actuators.
     Permitted: 'clear_costmap', 'soft_reset_nav2', 'replan_path', 'abort_mission'.
+    Requires operator_approval (non-empty string) to confirm human-in-the-loop.
     """
+    if not operator_approval:
+        return json.dumps({"error": "REJECTED: operator_approval required. Awaiting human confirmation."})
+
     allowed_actions = ["clear_costmap", "soft_reset_nav2", "replan_path", "abort_mission"]
     if action not in allowed_actions:
         return json.dumps({"error": f"Action '{action}' is invalid. Allowed actions: {allowed_actions}"})

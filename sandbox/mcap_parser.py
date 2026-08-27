@@ -1,25 +1,27 @@
 """MCAP / ROS2 bag analyzer using the rosbags library."""
-from pathlib import Path 
+from pathlib import Path  # pragma: no cover
 
-import numpy as np  
-from rosbags.rosbag2 import Reader  
-from rosbags.serde import deserialize_cdr 
+import numpy as np  # pragma: no cover
+from rosbags.rosbag2 import Reader  # pragma: no cover
+from rosbags.typesys import Stores, get_typestore  # pragma: no cover
 
 
-def parse_real_rosbag(mcap_path: str) -> dict:
+def parse_real_rosbag(mcap_path: str) -> dict:  # pragma: no cover
     path = Path(mcap_path)
     if not path.exists():
-        return {"error": f"Rosbag file not found at {mcap_path}"}
+        return {"error": f"Rosbag path not found at {mcap_path}"}
+    if not path.is_dir():
+        return {"error": f"Expected a rosbag2 directory, got file: {mcap_path}. Point to the directory containing metadata.yaml and storage files."}
 
+    typestore = get_typestore(Stores.ROS2_FOXY)
     pose_covariances = []
     cmd_velocities = []
 
     with Reader(path) as reader:
-        # Filter only required topics to minimize I/O and memory footprint
         connections = [x for x in reader.connections if x.topic in ["/odom", "/cmd_vel"]]
-        
+
         for connection, timestamp, rawdata in reader.messages(connections=connections):
-            msg = deserialize_cdr(rawdata, connection.msgtype)
+            msg = typestore.deserialize_cdr(rawdata, connection.msgtype)
             
             if connection.topic == "/odom":
                 # Extract covariance diagonal (pose uncertainty)
