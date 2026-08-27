@@ -1,8 +1,9 @@
 """FastMCP Server providing ROS 2 fleet telemetry and actuator actions."""
-from mcp.server.fastmcp import FastMCP
-from pydantic import BaseModel, Field
 import json
-import os
+
+from mcp.server.fastmcp import FastMCP
+
+from mcp_server.safety_guard import evaluate_safety_constraints
 
 mcp = FastMCP("RoboOps-Controller")
 
@@ -25,13 +26,6 @@ FLEET_STATE = {
         "incident_log_path": None
     }
 }
-
-class TelemetryQuery(BaseModel):
-    robot_id: str = Field(description="The unique identifier of the robot (e.g., 'AMR-04')")
-
-class RemediationAction(BaseModel):
-    robot_id: str = Field(description="Target robot ID")
-    action: str = Field(description="Remediation action: 'clear_costmap', 'soft_reset_nav2', 'replan_path', 'abort_mission'")
 
 @mcp.tool()
 def get_fleet_telemetry(robot_id: str) -> str:
@@ -62,8 +56,15 @@ def execute_robot_action(robot_id: str, action: str) -> str:
     if robot_id not in FLEET_STATE:
         return json.dumps({"error": f"Robot '{robot_id}' not found."})
 
+    safe, reason = evaluate_safety_constraints(robot_id, action, FLEET_STATE[robot_id])
+    if not safe:
+        return json.dumps({"error": reason})
+
     if action in ["clear_costmap", "replan_path"]:
         FLEET_STATE[robot_id]["status"] = "ACTIVE_TRANSIT"
+        FLEET_STATE[robot_id]["error_code"] = None
+    elif action == "soft_reset_nav2":
+        FLEET_STATE[robot_id]["status"] = "RECOVERING"
         FLEET_STATE[robot_id]["error_code"] = None
     elif action == "abort_mission":
         FLEET_STATE[robot_id]["status"] = "MANUAL_HOLD"
