@@ -1,8 +1,9 @@
 """FastMCP Server providing ROS 2 fleet telemetry and actuator actions."""
-from mcp.server.fastmcp import FastMCP
-from pydantic import BaseModel, Field
 import json
-import os
+
+from mcp.server.fastmcp import FastMCP
+
+from mcp_server.safety_guard import evaluate_safety_constraints
 
 mcp = FastMCP("RoboOps-Controller")
 
@@ -26,13 +27,6 @@ FLEET_STATE = {
     }
 }
 
-class TelemetryQuery(BaseModel):
-    robot_id: str = Field(description="The unique identifier of the robot (e.g., 'AMR-04')")
-
-class RemediationAction(BaseModel):
-    robot_id: str = Field(description="Target robot ID")
-    action: str = Field(description="Remediation action: 'clear_costmap', 'soft_reset_nav2', 'replan_path', 'abort_mission'")
-
 @mcp.tool()
 def get_fleet_telemetry(robot_id: str) -> str:
     """Fetches high-frequency telemetry and status for a specific robot."""
@@ -50,11 +44,15 @@ def get_incident_log_file(robot_id: str) -> str:
     return robot["incident_log_path"]
 
 @mcp.tool()
-def execute_robot_action(robot_id: str, action: str) -> str:
+def execute_robot_action(robot_id: str, action: str, operator_approval: str = "") -> str:
     """
     CRITICAL WRITE ACTION: Dispatches recovery commands to robot actuators.
     Permitted: 'clear_costmap', 'soft_reset_nav2', 'replan_path', 'abort_mission'.
+    Requires operator_approval (non-empty string) to confirm human-in-the-loop.
     """
+    if not operator_approval:
+        return json.dumps({"error": "REJECTED: operator_approval required. Awaiting human confirmation."})
+
     allowed_actions = ["clear_costmap", "soft_reset_nav2", "replan_path", "abort_mission"]
     if action not in allowed_actions:
         return json.dumps({"error": f"Action '{action}' is invalid. Allowed actions: {allowed_actions}"})
@@ -62,8 +60,15 @@ def execute_robot_action(robot_id: str, action: str) -> str:
     if robot_id not in FLEET_STATE:
         return json.dumps({"error": f"Robot '{robot_id}' not found."})
 
+    safe, reason = evaluate_safety_constraints(robot_id, action, FLEET_STATE[robot_id])
+    if not safe:
+        return json.dumps({"error": reason})
+
     if action in ["clear_costmap", "replan_path"]:
         FLEET_STATE[robot_id]["status"] = "ACTIVE_TRANSIT"
+        FLEET_STATE[robot_id]["error_code"] = None
+    elif action == "soft_reset_nav2":
+        FLEET_STATE[robot_id]["status"] = "RECOVERING"
         FLEET_STATE[robot_id]["error_code"] = None
     elif action == "abort_mission":
         FLEET_STATE[robot_id]["status"] = "MANUAL_HOLD"

@@ -1,6 +1,6 @@
 """Script executed in the sandbox to parse odometry covariance and costmaps."""
 import json
-import sys
+
 
 def analyze_telemetry_logs() -> dict:
     # Diagnostic rules calculating localization drift vs costmap inflation

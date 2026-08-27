@@ -8,6 +8,13 @@ rich>=13.7.0
 # LLM Clients
 openai>=1.30.0
 
+# Sandbox
+rosbags>=0.9.0
+numpy>=1.24.0
+
+# Audit Trail
+pandas>=2.0.0
+
 # Testing
 pytest>=8.0.0
 pytest-cov>=4.0.0
