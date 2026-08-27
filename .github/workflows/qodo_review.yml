@@ -22,7 +22,6 @@ jobs:
           PYTHONPATH: .
         run: |
           pip install -r requirements.txt
-          pip install -e .
           pytest
 
       - name: Qodo PR Agent
