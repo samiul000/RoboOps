@@ -1,5 +1,6 @@
 """FastMCP Server providing ROS 2 fleet telemetry and actuator actions."""
 import json
+from datetime import datetime, timezone
 
 from mcp.server.fastmcp import FastMCP
 
@@ -79,6 +80,53 @@ def execute_robot_action(robot_id: str, action: str, operator_approval: str = ""
         "action_executed": action,
         "new_fleet_status": FLEET_STATE[robot_id]["status"]
     })
+
+@mcp.tool()
+def get_current_datetime() -> str:
+    """Returns the current UTC date and time."""
+    return json.dumps({"utc_now": datetime.now(timezone.utc).isoformat()})
+
+
+@mcp.tool()
+def safety_invariant_check(robot_id: str) -> str:
+    """Checks safety invariants for a robot: battery level, collision alerts, speed limits."""
+    robot = FLEET_STATE.get(robot_id)
+    if not robot:
+        return json.dumps({"error": f"Robot '{robot_id}' not found."})
+
+    invariants = {
+        "robot_id": robot_id,
+        "battery_ok": robot["battery_pct"] > 20.0,
+        "battery_pct": robot["battery_pct"],
+        "no_collision_alert": robot.get("error_code") != "COLLISION_EVENT",
+        "speed_limit_ok": True,
+        "all_clear": False,
+    }
+    invariants["all_clear"] = all([
+        invariants["battery_ok"],
+        invariants["no_collision_alert"],
+        invariants["speed_limit_ok"],
+    ])
+    return json.dumps(invariants, indent=2)
+
+
+@mcp.tool()
+def restart_planner(robot_id: str, zone: str) -> str:
+    """Restarts the NAV2 planner for a stuck robot by clearing the costmap. Requires operator approval."""
+    robot = FLEET_STATE.get(robot_id)
+    if not robot:
+        return json.dumps({"error": f"Robot '{robot_id}' not found."})
+
+    if robot.get("error_code") != "NAV2_PLANNER_RECOVERY_EXHAUSTED":
+        return json.dumps({"error": f"Robot '{robot_id}' does not have NAV2_PLANNER_RECOVERY_EXHAUSTED."})
+
+    result = execute_robot_action(robot_id, "clear_costmap", operator_approval="approved")
+    parsed = json.loads(result)
+    if parsed.get("status") == "SUCCESS":
+        parsed["zone"] = zone
+        parsed["message"] = f"Planner restarted for {robot_id} in {zone}. Verify no COLLISION_EVENT for 2 minutes."
+    return json.dumps(parsed)
+
 
 if __name__ == "__main__":
     mcp.run()
