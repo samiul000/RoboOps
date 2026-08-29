@@ -1,7 +1,7 @@
 <div align="center">
 
 <h1>RoboOps</h1>
-<img src="logo.png">
+<img src="assets/logo.png" width="30%" height="30%">
 <br>
 
 > **Autonomous incident triage and self-healing agent for ROS 2 AMR fleets.**
@@ -115,8 +115,8 @@ roboops_agent/
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/roboops_agent.git
-cd roboops_agent
+git clone https://github.com/your-org/RoboOps.git
+cd RoboOps
 
 # Create virtual environment
 python -m venv .venv
