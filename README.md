@@ -58,6 +58,26 @@ Built on [TrueForge](https://github.com/truefoundry/trueforge) with [FastMCP](ht
 | **Audit Trail**           | SQLite logging of all incidents, diagnoses, and actions            |
 | **Sandboxed Diagnostics** | MCAP log parsing and odometry analysis in isolated environment     |
 
+---
+
+## Screenshots
+
+<table>
+  <tr>
+    <td><img src="assets/ss1.png" alt="Screenshot 1" width="100%"></td>
+    <td><img src="assets/ss2.png" alt="Screenshot 2" width="100%"></td>
+    <td><img src="assets/ss3.png" alt="Screenshot 3" width="100%"></td>
+  </tr>
+</table>
+
+---
+
+## Demo
+
+<img src="assets/robo-ops_demo.gif" alt="Demo" width="55%" height="55%">
+
+---
+
 ## Project Structure
 
 ```
