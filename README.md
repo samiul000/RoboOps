@@ -9,7 +9,7 @@
 <p>
 <img src="https://img.shields.io/badge/python-3.10+-blue.svg" alt="Python 3.10+">
 <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="LICENSE">
-<img src="https://img.shields.io/badge/tests-23%20pass-brightgreen" alt="Tests">
+<img src="https://img.shields.io/badge/tests-32%20pass-brightgreen" alt="Tests">
 <img src="https://img.shields.io/badge/coverage-94%25-brightgreen" alt="Coverage">
 </p>
 
@@ -219,6 +219,18 @@ The `ros2_triage` skill defines diagnostic rules:
 | Ghost Costmap              | `costmap_trapped_footprint == True` AND `NAV2_PLANNER_RECOVERY_EXHAUSTED` | `clear_costmap` → `replan_path` |
 | Wheel Slip / Odometry Loss | `covariance_spike > 1.5` AND `amcl_divergence > 2.0`                      | `abort_mission` → manual teleop |
 
+## Safety Controls
+
+- All actuator recovery paths require explicit human-in-the-loop approval.
+- Operator approvals are issued as time-bound, one-time grants tied to a specific robot and action.
+- Stale, missing, or invalid telemetry causes navigation recovery to fail closed.
+- Battery, collision-alert, speed, and telemetry-freshness checks are enforced before recovery.
+- Robot rate limits constrain repeated recovery actions.
+- Incident-log access is protected by project-root path containment.
+- Audit events include execution results and integrity hashes.
+- Approval replay, telemetry staleness, path traversal, and concurrency behavior are covered by automated tests.
+- A deterministic safety demonstration is available via `python scripts/demo_safety.py`.
+
 ## Testing
 
 ```bash
@@ -229,7 +241,7 @@ python -m pytest tests/ -v
 python -m pytest tests/ --cov=mcp_server --cov-report=term-missing --cov-fail-under=85
 ```
 
-**Current status:** 23 passed, 2 skipped, 94% coverage.
+**Current status:** 32 passed, 0 skipped.
 
 ## Linting
 
@@ -261,7 +273,6 @@ The agent will:
 ## Acknowledgements
 
 - [TrueForge](https://github.com/truefoundry/trueforge) : Agentic workflow runtime and MCP integration
-- [Qodo](https://qodo.ai) : Automated PR code review
 - [FastMCP](https://github.com/jlowin/fastmcp) : MCP server framework for tool integration
 - [Ollama](https://ollama.com) : Local LLM inference
 - [ROS 2](https://docs.ros.org) : Robot Operating System 2
