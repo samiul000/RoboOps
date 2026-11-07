@@ -1,0 +1,14 @@
+{
+  "image": "python:3.11-slim",
+  "resources": {
+    "cpu": "1.0",
+    "memory": "1024MB",
+    "disk": "2GB"
+  },
+  "network": {
+    "ingress": "none",
+    "egress": "none"
+  },
+  "timeout_seconds": 30,
+  "read_only_mounts": ["/var/log/robot_fleets:/workspace/logs:ro"]
+}

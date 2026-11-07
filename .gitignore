@@ -1,5 +1,7 @@
-# Environment
+# Environment and secrets
 .env
+.env.*
+!.env.example
 .venv/
 venv/
 
@@ -7,24 +9,42 @@ venv/
 __pycache__/
 *.pyc
 *.pyo
-
-# Testing & Coverage
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Build
+*.pyd
 *.egg-info/
 dist/
 build/
 
-# Database
-*.db
+# Testing and coverage
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.tox/
 
-# IDE
+# Database and local state
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+roboops_fleet_state.json
+
+# Logs and runtime artifacts
+*.log
+logs/
+
+# IDE and editor
 .vscode/
 .idea/
+*.swp
+*.swo
 
-# Extra
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local project artifacts
 others/
-*.ruff_cache
+*.ruff_cache/
+.mypy_cache/
+TODO.md

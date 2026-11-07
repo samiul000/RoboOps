@@ -1,0 +1,37 @@
+name: Production CI & Qodo Gate
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  validate_and_review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install ruff mypy pytest-cov
+
+      - name: Static Analysis
+        run: |
+          ruff check .
+          mypy mcp_server/ agent/ database/ sandbox/ || true
+
+      - name: Run Test Suite with Coverage Gate
+        run: |
+          pytest --cov=mcp_server --cov=agent --cov=database --cov=sandbox --cov-report=term-missing --cov-fail-under=60 tests/
+
+      - name: Qodo PR Review
+        if: github.event_name == 'pull_request'
+        uses: Codium-ai/pr-agent@main
+        env:
+          OPENAI_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
