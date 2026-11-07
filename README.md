@@ -10,7 +10,7 @@
 <img src="https://img.shields.io/badge/python-3.10+-blue.svg" alt="Python 3.10+">
 <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="LICENSE">
 <img src="https://img.shields.io/badge/tests-32%20pass-brightgreen" alt="Tests">
-<img src="https://img.shields.io/badge/coverage-94%25-brightgreen" alt="Coverage">
+<img src="https://img.shields.io/badge/coverage-65%25-yellow" alt="Coverage">
 </p>
 
 </div>
@@ -97,7 +97,7 @@ roboops_agent/
 │   └── ros2_triage/
 │       └── SKILL.md          # Diagnostic rules for Nav2 faults
 ├── tests/
-│   └── test_mcp_server.py    # 23 tests, 94% coverage
+│   └── test_mcp_server.py    # 32 tests, 65% coverage
 ├── trueforge_config.json     # Agent configuration
 ├── pyproject.toml
 ├── requirements.txt
@@ -218,6 +218,18 @@ The `ros2_triage` skill defines diagnostic rules:
 | -------------------------- | ------------------------------------------------------------------------- | ------------------------------- |
 | Ghost Costmap              | `costmap_trapped_footprint == True` AND `NAV2_PLANNER_RECOVERY_EXHAUSTED` | `clear_costmap` → `replan_path` |
 | Wheel Slip / Odometry Loss | `covariance_spike > 1.5` AND `amcl_divergence > 2.0`                      | `abort_mission` → manual teleop |
+
+## Tested Bypass Scenarios
+
+The automated suite includes red-team coverage for:
+
+- actuator calls without approval;
+- approval replay after one-time consumption;
+- approval tokens bound to a different robot or action;
+- stale and missing telemetry;
+- low battery, collision, and excessive speed;
+- incident-log path traversal outside the project root;
+- concurrent rate-limit pressure.
 
 ## Safety Controls
 
