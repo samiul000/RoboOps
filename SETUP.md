@@ -286,7 +286,7 @@ source .venv/bin/activate
 python -m pytest tests/ -v
 
 # Run with coverage
-python -m pytest tests/ --cov=mcp_server --cov-report=term-missing --cov-fail-under=65
+python -m pytest tests/ --cov=mcp_server --cov-report=term-missing --cov-fail-under=85
 ```
 
 ## Architecture Overview
