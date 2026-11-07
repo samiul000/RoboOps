@@ -5,7 +5,7 @@ import shutil
 import sqlite3
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 DB_PATH = "roboops_audit.db"
 _DB_LOCK = threading.Lock()

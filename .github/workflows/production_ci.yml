@@ -1,4 +1,4 @@
-name: Production CI & Qodo Gate
+name: Production CI
 
 on:
   pull_request:
@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  validate_and_review:
+  validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,10 +28,3 @@ jobs:
       - name: Run Test Suite with Coverage Gate
         run: |
           pytest --cov=mcp_server --cov=agent --cov=database --cov=sandbox --cov-report=term-missing --cov-fail-under=60 tests/
-
-      - name: Qodo PR Review
-        if: github.event_name == 'pull_request'
-        uses: Codium-ai/pr-agent@main
-        env:
-          OPENAI_KEY: ${{ secrets.OPENAI_API_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

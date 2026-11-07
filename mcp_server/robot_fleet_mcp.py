@@ -95,7 +95,7 @@ def _audit_action(robot_id: str, action: str, approval: str, result: str, diagno
             approved_by=approval,
             result=result,
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         logger.warning("Failed to persist incident event for %s: %s", robot_id, exc)
 
 

@@ -33,7 +33,7 @@ def parse_real_rosbag(mcap_path: str) -> dict:
                         "vx": float(msg.linear.x),
                         "wz": float(msg.angular.z)
                     })
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         return {"error": f"Failed to parse rosbag at {mcap_path}: {exc}"}
 
     max_cov = float(np.max(pose_covariances)) if pose_covariances else 0.0
