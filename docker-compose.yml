@@ -1,0 +1,18 @@
+services:
+  roboops-mcp:
+    image: python:3.11-slim
+    working_dir: /app
+    command: ["python", "mcp_server/robot_fleet_mcp.py"]
+    volumes:
+      - .:/app
+    environment:
+      ROBOOPS_OPERATOR_TOKEN: "change-me-before-production"
+      ROBOOPS_ALLOW_LEGACY_APPROVALS: "false"
+      FLEET_STATE_STORE_PATH: "/app/roboops_fleet_state.json"
+    ports:
+      - "8080:8080"
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"

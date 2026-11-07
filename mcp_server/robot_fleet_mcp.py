@@ -3,13 +3,18 @@ import json
 import logging
 import os
 import threading
+import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
 from database.audit_logger import log_incident_event
-from mcp_server.safety_guard import evaluate_safety_constraints
+from mcp_server.safety_guard import (
+    MAX_TELEMETRY_AGE_SECONDS,
+    evaluate_safety_constraints,
+)
 
 logger = logging.getLogger(__name__)
 mcp = FastMCP("RoboOps-Controller")
@@ -17,14 +22,66 @@ STATE_LOCK = threading.Lock()
 FLEET_STATE_STORE_PATH = os.getenv("FLEET_STATE_STORE_PATH")
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
+# One-time, action/robot-bound human approvals. Tokens are opaque grants rather
+# than reusable free-form strings.
+APPROVAL_STORE = {}
+APPROVAL_STORE_LOCK = threading.Lock()
+
 
 def _approval_accepted(approval: str) -> bool:
+    """Compatibility check for tests and simple deployments."""
     required_token = os.getenv("ROBOOPS_OPERATOR_TOKEN")
+    if approval.startswith("grant:"):
+        return _validate_grant(approval, None, None, consume=False)
     if not approval:
         return False
     if required_token:
         return approval == required_token
-    return True
+    return os.getenv("ROBOOPS_ALLOW_LEGACY_APPROVALS", "true").lower() == "true"
+
+
+def issue_approval(robot_id: str, action: str, issued_by: str = "operator", ttl_seconds: int = 120) -> str:
+    """Mint a one-time approval grant bound to one robot and one action."""
+    token = uuid.uuid4().hex
+    with APPROVAL_STORE_LOCK:
+        APPROVAL_STORE[token] = {
+            "robot_id": robot_id,
+            "action": action,
+            "issued_by": issued_by,
+            "expires_at": time.time() + ttl_seconds,
+            "consumed": False,
+        }
+    return f"grant:{token}"
+
+
+def _validate_grant(approval: str, robot_id: str, action: str, consume: bool = True) -> bool:
+    token = approval.removeprefix("grant:")
+    now = time.time()
+    with APPROVAL_STORE_LOCK:
+        grant = APPROVAL_STORE.get(token)
+        if grant is None:
+            return False
+        if grant["consumed"] or grant["expires_at"] < now:
+            return False
+        if robot_id is not None and grant["robot_id"] != robot_id:
+            return False
+        if action is not None and grant["action"] != action:
+            return False
+        if consume:
+            grant["consumed"] = True
+        return True
+
+
+def _approval_valid_for_action(robot_id: str, action: str, approval: str) -> bool:
+    if not approval:
+        return False
+    if approval.startswith("grant:"):
+        return _validate_grant(approval, robot_id, action, consume=True)
+    # Legacy mode intentionally requires an explicit operator token in production.
+    required_token = os.getenv("ROBOOPS_OPERATOR_TOKEN")
+    if required_token:
+        return approval == required_token
+    return os.getenv("ROBOOPS_ALLOW_LEGACY_APPROVALS", "true").lower() == "true"
 
 
 def _is_safe_project_path(path_value: str) -> bool:
@@ -59,6 +116,7 @@ def _load_persisted_state():
         FLEET_STATE.update({k: dict(v) for k, v in loaded.items()})
 
 
+NOW = time.time()
 FLEET_STATE = {
     "AMR-04": {
         "status": "ERROR_NAVIGATION_STUCK",
@@ -69,6 +127,7 @@ FLEET_STATE = {
         "incident_log_path": "sandbox/amr_04_incident.json",
         "collision_alert": False,
         "speed_kph": 0.0,
+        "last_telemetry_at": NOW,
     },
     "AMR-02": {
         "status": "ACTIVE_TRANSIT",
@@ -79,6 +138,7 @@ FLEET_STATE = {
         "incident_log_path": None,
         "collision_alert": False,
         "speed_kph": 0.0,
+        "last_telemetry_at": NOW,
     }
 }
 _load_persisted_state()
@@ -106,6 +166,8 @@ def get_fleet_telemetry(robot_id: str) -> str:
         robot = FLEET_STATE.get(robot_id)
         if not robot:
             return json.dumps({"error": f"Robot '{robot_id}' not found in fleet."})
+        robot["last_telemetry_at"] = time.time()
+        _persist_fleet_state()
         return json.dumps(robot, indent=2)
 
 
@@ -127,14 +189,16 @@ def execute_robot_action(robot_id: str, action: str, operator_approval: str = ""
     """
     CRITICAL WRITE ACTION: Dispatches recovery commands to robot actuators.
     Permitted: 'clear_costmap', 'soft_reset_nav2', 'replan_path', 'abort_mission'.
-    Requires operator_approval (non-empty string) to confirm human-in-the-loop.
+    Requires operator_approval to confirm human-in-the-loop.
     """
-    if not _approval_accepted(operator_approval):
-        return json.dumps({"error": "REJECTED: valid operator_approval required. Awaiting human confirmation."})
-
     allowed_actions = ["clear_costmap", "soft_reset_nav2", "replan_path", "abort_mission"]
     if action not in allowed_actions:
         return json.dumps({"error": f"Action '{action}' is invalid. Allowed actions: {allowed_actions}"})
+
+    if not _approval_valid_for_action(robot_id, action, operator_approval):
+        _audit_action(robot_id, action, operator_approval, "BLOCKED: invalid or expired approval")
+        logger.warning("Blocked action %s for %s: invalid or expired approval", action, robot_id)
+        return json.dumps({"error": "REJECTED: valid operator_approval required. Awaiting human confirmation."})
 
     with STATE_LOCK:
         if robot_id not in FLEET_STATE:
@@ -163,7 +227,7 @@ def execute_robot_action(robot_id: str, action: str, operator_approval: str = ""
             "new_fleet_status": FLEET_STATE[robot_id]["status"]
         })
         _audit_action(robot_id, action, operator_approval, "SUCCESS")
-        logger.info("Executed %s for %s with approval %s", action, robot_id, operator_approval)
+        logger.info("Executed %s for %s", action, robot_id)
     _persist_fleet_state()
     return result
 
@@ -176,7 +240,7 @@ def get_current_datetime() -> str:
 
 @mcp.tool()
 def safety_invariant_check(robot_id: str) -> str:
-    """Checks safety invariants for a robot: battery level, collision alerts, speed limits."""
+    """Checks safety invariants for a robot: battery level, collision alerts, speed limits, telemetry freshness."""
     with STATE_LOCK:
         robot = FLEET_STATE.get(robot_id)
         if not robot:
@@ -193,7 +257,9 @@ def safety_invariant_check(robot_id: str) -> str:
             speed_ok = float(speed) <= 20.0
         except (TypeError, ValueError):
             speed_ok = False
-        all_clear = battery_ok and no_collision_alert and speed_ok
+        telemetry_age = time.time() - float(robot.get("last_telemetry_at", 0.0))
+        telemetry_fresh = telemetry_age <= MAX_TELEMETRY_AGE_SECONDS
+        all_clear = battery_ok and no_collision_alert and speed_ok and telemetry_fresh
 
         invariants = {
             "robot_id": robot_id,
@@ -204,6 +270,9 @@ def safety_invariant_check(robot_id: str) -> str:
             "speed_limit_ok": speed_ok,
             "speed_kph": speed,
             "max_speed_kph": 20.0,
+            "telemetry_fresh": telemetry_fresh,
+            "telemetry_age_seconds": round(telemetry_age, 3),
+            "max_telemetry_age_seconds": MAX_TELEMETRY_AGE_SECONDS,
             "all_clear": all_clear,
         }
         return json.dumps(invariants, indent=2)
@@ -212,7 +281,7 @@ def safety_invariant_check(robot_id: str) -> str:
 @mcp.tool()
 def restart_planner(robot_id: str, zone: str, operator_approval: str = "") -> str:
     """Restarts the NAV2 planner for a stuck robot. Requires explicit operator approval."""
-    if not _approval_accepted(operator_approval):
+    if not _approval_valid_for_action(robot_id, "clear_costmap", operator_approval):
         return json.dumps({"error": "REJECTED: valid operator_approval required. Awaiting human confirmation."})
 
     with STATE_LOCK:

@@ -12,6 +12,7 @@ WINDOW_SECONDS = 300  # 5 minutes
 NAVIGATION_ACTIONS = {"clear_costmap", "replan_path", "soft_reset_nav2"}
 BATTERY_THRESHOLD_PCT = 15.0
 MAX_SAFE_SPEED_KPH = 20.0
+MAX_TELEMETRY_AGE_SECONDS = 30.0
 
 
 def _robot_has_collision_alert(robot_state: dict) -> bool:
@@ -20,6 +21,16 @@ def _robot_has_collision_alert(robot_state: dict) -> bool:
         or robot_state.get("collision_event")
         or robot_state.get("error_code") == "COLLISION_EVENT"
     )
+
+
+def _telemetry_fresh(robot_state: dict) -> bool:
+    if "last_telemetry_at" not in robot_state:
+        return False
+    try:
+        age = time.time() - float(robot_state["last_telemetry_at"])
+    except (TypeError, ValueError):
+        return False
+    return age <= MAX_TELEMETRY_AGE_SECONDS
 
 
 def evaluate_safety_constraints(robot_id: str, action: str, robot_state: dict) -> tuple[bool, str]:
@@ -37,6 +48,13 @@ def evaluate_safety_constraints(robot_id: str, action: str, robot_state: dict) -
                     f"SAFETY LOCKOUT: Robot {robot_id} has exceeded max recovery actions "
                     f"({MAX_ACTIONS_PER_WINDOW} in 5 min)."
                 )
+
+    # Fail closed on stale or unavailable telemetry.
+    if action in NAVIGATION_ACTIONS and not _telemetry_fresh(robot_state):
+        return False, (
+            f"SAFETY REJECT: Telemetry is stale or unavailable for {robot_id}. "
+            "Navigation recovery blocked until fresh telemetry arrives."
+        )
 
     # 2. State-Based Invariant Checks — low battery blocks navigation recovery
     if action in NAVIGATION_ACTIONS and robot_state.get("battery_pct", 0) < BATTERY_THRESHOLD_PCT:

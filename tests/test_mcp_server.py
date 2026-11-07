@@ -2,6 +2,7 @@
 import json
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -23,7 +24,8 @@ INITIAL_FLEET_STATE = {
         "error_code": "NAV2_PLANNER_RECOVERY_EXHAUSTED",
         "location": {"x": 14.2, "y": 7.8},
         "target_waypoint": {"x": 28.0, "y": 32.5},
-        "incident_log_path": "sandbox/amr_04_incident.json"
+        "incident_log_path": "sandbox/amr_04_incident.json",
+        "last_telemetry_at": time.time()
     },
     "AMR-02": {
         "status": "ACTIVE_TRANSIT",
@@ -31,7 +33,8 @@ INITIAL_FLEET_STATE = {
         "error_code": None,
         "location": {"x": 5.0, "y": 12.0},
         "target_waypoint": {"x": 10.0, "y": 12.0},
-        "incident_log_path": None
+        "incident_log_path": None,
+        "last_telemetry_at": time.time()
     }
 }
 
@@ -143,28 +146,28 @@ def test_safety_guard_abort_bypasses_lockout():
 
 
 def test_safety_guard_low_battery_blocks_clear_costmap():
-    low_battery_robot = {"battery_pct": 10.0}
+    low_battery_robot = {"battery_pct": 10.0, "last_telemetry_at": time.time()}
     safe, reason = evaluate_safety_constraints("AMR-04", "clear_costmap", low_battery_robot)
     assert safe is False
     assert "Battery too low" in reason
 
 
 def test_safety_guard_low_battery_blocks_replan_path():
-    low_battery_robot = {"battery_pct": 10.0}
+    low_battery_robot = {"battery_pct": 10.0, "last_telemetry_at": time.time()}
     safe, reason = evaluate_safety_constraints("AMR-04", "replan_path", low_battery_robot)
     assert safe is False
     assert "Battery too low" in reason
 
 
 def test_safety_guard_low_battery_blocks_soft_reset():
-    low_battery_robot = {"battery_pct": 10.0}
+    low_battery_robot = {"battery_pct": 10.0, "last_telemetry_at": time.time()}
     safe, reason = evaluate_safety_constraints("AMR-04", "soft_reset_nav2", low_battery_robot)
     assert safe is False
     assert "Battery too low" in reason
 
 
 def test_safety_guard_low_battery_allows_abort():
-    low_battery_robot = {"battery_pct": 10.0}
+    low_battery_robot = {"battery_pct": 10.0, "last_telemetry_at": time.time()}
     safe, _reason = evaluate_safety_constraints("AMR-04", "abort_mission", low_battery_robot)
     assert safe is True
 
@@ -263,3 +266,81 @@ def test_local_only_router_no_crash():
         importlib.reload(mod)
         router = mod.ResilientLLMRouter()
         assert router.cloud_client is None
+# --- Red-team / challenge robustness tests ---
+
+def test_approval_grant_is_one_time():
+    from mcp_server.robot_fleet_mcp import execute_robot_action, issue_approval
+
+    approval = issue_approval("AMR-04", "clear_costmap", ttl_seconds=60)
+    first = json.loads(execute_robot_action("AMR-04", "clear_costmap", operator_approval=approval))
+    assert first["status"] == "SUCCESS"
+    second = json.loads(execute_robot_action("AMR-04", "clear_costmap", operator_approval=approval))
+    assert "error" in second
+
+
+def test_approval_grant_is_bound_to_robot_and_action():
+    from mcp_server.robot_fleet_mcp import execute_robot_action, issue_approval
+
+    approval = issue_approval("AMR-04", "clear_costmap", ttl_seconds=60)
+    blocked = json.loads(execute_robot_action("AMR-04", "soft_reset_nav2", operator_approval=approval))
+    assert "error" in blocked
+
+
+def test_stale_telemetry_blocks_navigation():
+    from mcp_server.safety_guard import evaluate_safety_constraints
+
+    stale_robot = {"battery_pct": 90.0, "last_telemetry_at": time.time() - 3600}
+    safe, reason = evaluate_safety_constraints("AMR-04", "clear_costmap", stale_robot)
+    assert safe is False
+    assert "stale or unavailable" in reason
+
+
+def test_missing_telemetry_fails_closed():
+    from mcp_server.safety_guard import evaluate_safety_constraints
+
+    unknown_robot = {"battery_pct": 90.0}
+    safe, reason = evaluate_safety_constraints("AMR-04", "clear_costmap", unknown_robot)
+    assert safe is False
+    assert "stale or unavailable" in reason
+
+
+def test_restart_planner_requires_approval():
+    from mcp_server.robot_fleet_mcp import restart_planner
+
+    result = json.loads(restart_planner("AMR-04", "Zone-1"))
+    assert "error" in result
+    assert "approval" in result["error"].lower()
+
+
+def test_incident_log_path_traversal_rejected():
+    import mcp_server.robot_fleet_mcp as mod
+
+    original = mod.FLEET_STATE["AMR-04"]["incident_log_path"]
+    mod.FLEET_STATE["AMR-04"]["incident_log_path"] = "../../secret.txt"
+    try:
+        result = mod.get_incident_log_file("AMR-04")
+        assert "escapes project root" in result
+    finally:
+        mod.FLEET_STATE["AMR-04"]["incident_log_path"] = original
+
+
+def test_rate_limit_concurrency():
+    import threading
+
+    from mcp_server.safety_guard import ACTION_HISTORY, evaluate_safety_constraints
+
+    ACTION_HISTORY.clear()
+    robot = {"battery_pct": 90.0, "last_telemetry_at": time.time()}
+    results = []
+
+    def worker():
+        safe, _reason = evaluate_safety_constraints("AMR-CONC", "clear_costmap", robot)
+        results.append(safe)
+
+    threads = [threading.Thread(target=worker) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert sum(1 for item in results if item) <= 3

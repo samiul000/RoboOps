@@ -40,7 +40,7 @@ def init_db():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_robot_time ON incident_audit_log(robot_id, timestamp)")
         if "integrity_hash" not in _columns(conn):
             conn.execute("ALTER TABLE incident_audit_log ADD COLUMN integrity_hash TEXT")
-    print("✅ [Database] roboops_audit.db initialized successfully.")
+    print("[Database] roboops_audit.db initialized successfully.")
 
 
 def _hash_event(timestamp, robot_id, error_code, diagnosis, action, approved_by, result):
